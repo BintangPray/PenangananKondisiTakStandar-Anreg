@@ -1,0 +1,246 @@
+---
+title: "Pertemuan 7 Analisis Regresi"
+author: "Nabil Bintang Prayoga/G1401221017"
+date: "2024-03-05"
+output: rmdformats::readthedown
+---
+
+# Data
+## Inisialisasi Library
+```{r}
+library(readxl)
+library(dplyr)
+library(plotly)
+library(lmtest)
+library(car)
+library(randtests)
+library(nortest)
+```
+
+## Import Data
+```{r}
+data <- read_xlsx("D:\\KULIAHH\\SEMESTER 4\\ANREG\\DATA ANREG.xlsx")
+data
+```
+
+## Model Awal
+```{r}
+model = lm(formula = Y ~ ., data = data)
+summary(model)
+```
+Diperoleh model sebagai berikut  
+$$
+\hat Y = 46.46041 - 0.7525X + e
+$$
+Hasil tersebut belum bisa dipastikan menjadi model terbaik karena belum melalui serangkaian uji asumsi, sehingga diperlukan eksplorasi kondisi dan pengujian asumsi Gaus Markov dan normalitas untuk menghasilkan model terbaik
+
+# Eksplorasi Kondisi
+## Plot Hubungan X dan Y
+```{r}
+plot(x = data$X,y = data$Y)
+```
+Hasil plot variabel X dan Y menggambarkan hubungan yang tidak linier dan cenderung membentuk parabola
+
+## Plot Sisaan Vs Y duga
+```{r}
+plot(model,1) 
+```
+1. Sisaan menyebar di sekitar 0, sehingga nilai harapan galat sama dengan nol  
+2. Lebar pita sama untuk setiap nilai dugaan, sehingga ragam homogen  
+3. Plot sisaan vs y duga membentuk pula kurva, sehingga model tidak pas dan perlu transformasi terhadap variabel)
+
+## Plot Sisaan Vs Urutan
+```{r}
+plot(x = 1:dim(data)[1],
+     y = model$residuals,
+     type = 'b', 
+     ylab = "Residuals",
+     xlab = "Observation")
+```
+Tebaran membentuk pola kurva, sehingga sisaan tidak saling bebas dan dipastikan model tidak pas
+
+## Normalitas Sisaan dengan QQ-Plot
+```{r}
+plot(model,2)
+```
+Data cenderung membentuk garis lurus walau ada beberapa pengamatan yang sedikit menjauh dari garis, sehingga sisaan data menyebar normal
+
+# Uji Formal Asumsi
+Pada uji formal asumsi ini, diharapkan nilai p-value > 0.05 dengan kesimpulan tak tolak H0  
+## Kondisi Gaus Markov
+### 1. Nilai Harapan Sisaan sama dengan Nol
+H0: Nilai harapan sisaan sama dengan nol  
+H1: Nilai harapan sisaan tidak sama dengan nol  
+```{r}
+t.test(model$residuals,mu = 0,conf.level = 0.95)
+```
+Uji t.tes tersebut menunjukkan hasil p-value = 1 > alpha = 0.05, maka tak tolak H0, nilai harapan sisaan sama dengan nol pada taraf nyata 5%. Asumsi terpenuhi.
+
+### 2. Ragam Sisaan Homogen
+$H0:var[e]=sigma2I$ (ragam sisan homogen)  
+$H1:var[e] != sigma2I$ (ragam siaan tidak homogen)  
+```{r}
+kehomogenan = lm(formula = abs(model$residuals) ~ X,
+    data = data)
+summary(kehomogenan)
+
+bptest(model)
+ncvTest(model)
+```
+Uji ini sering disebut dengan uji homokesdasitas yang dilakukan dengan  yang dilakukan dengan uji Breusch-Pagan. Karena p-value = 0.4674 > alpha = 0.05, maka tak tolak H0, ragam sisaan homogen pada taraf nyata 5%. Asumsi terpenuhi.
+
+### 3. Sisaan Saling Bebas
+$H0:E[ei,ej]=0$ (sisaan saling bebas/tidak ada autokorelasi)  
+$H1:E[ei,ej] != 0$ (sisaan tidak saling bebas/ada autokorelasi)  
+```{r}
+runs.test(model$residuals)
+
+dwtest(model)
+```
+```{r}
+acf(model$residuals)
+```
+
+Uji ini sering disebut dengan uji autokorelasi yang dilakukan dengan Durbin_watson. Karena p-value = 1.333e-05 (pada DW test) < alpha = 0.05, maka tolak H0, sisaan tidak saling bebas pada taraf nyata 5%, sehingga asumsi tidak terpenuhi. Dibuktikan pula pada eksplorasi sisaan bahwa nilai autokorelasi pada lag 1 bernilai 0.5 dan 0.4 pada lag 2 yang berada di luar batas kepercayaan 95%, autokorelasi signifikan.
+
+## Uji Formal Normalitas Sisaan
+$H_0 : N$ (sisaan menyebar Normal)
+$H_1 : N$ (sisaan tidak menyebar Normal) 
+```{r}
+shapiro.test(model$residuals)
+```
+```{r}
+sisaan_model <- resid(model)
+(norm_model <- lillie.test(sisaan_model))
+```
+Uji normalitas digunakan untuk mendeteksi normalitas sisaan dengan uji shapiro.test dan kolmogrov-smirnov. Karena p-value = 0.7701 (lilliefors) > alpha = 0.05, maka tak tolak H0, sehingga sisaan menyebar normal pada taraf nyata 5%.
+
+# Metode Weighted Least Squares
+Langkah ini hanya untuk membandingkan saja, karena sisaan ragam sudah homogen maka sebenernya tidak perlu dilakukan pembobotan dan langsung transformasi data saja
+## Pembobotan Data
+```{r}
+resid_abs <- abs(model$residuals)
+fitted_val <- model$fitted.values
+fit <- lm(resid_abs ~ fitted_val)
+data.weights <- 1 / fit$fitted.values^2
+data.weights
+plot(data.weights)
+model.weighted <- lm(Y~X, data = data, weights = data.weights)
+plot(model.weighted)
+```
+Hasil eksplorasi tersebut menggambarkan bahwa data hasil pembobotan masih belum memenuhi uji asumsi.
+
+## Model WLS
+```{r}
+model.lmw <- lm(Y~X, 
+                data = data, 
+                weights = data.weights)
+summary(model.lmw)
+```
+Diperoleh model sebagai berikut  
+$$
+\hat Y = 45.41058 - 0.71925X + e
+$$
+
+## Perbandingan OLS Vs WLS
+```{r}
+par(mfrow=c(1,2))
+plot(y = rstandard(model),
+     x = model$fitted.values,
+     main="OLS")
+abline(h=0, col="red")
+plot(y = rstandard(model.lmw),
+     x = model.lmw$fitted.values,
+     main="WLS")
+abline(h=0, col="red")
+par(mfrow=c(1,1))
+```
+Karena data telah memiliki ragam sisaan yang homogen, maka model dan plot yang terbentuk tidak berubah signifikan sehingga model masih dikatakan belum pas. Sebab metode WLS umumnya dilakukan untuk data yang memiliki ragam sisaan tidak homogen.
+
+# Penyesuaian Data
+## Transformasi Data
+```{r}
+Yubah = sqrt(data$Y)
+Xubah = sqrt(data$X)
+
+plot(x = data$X,y = Yubah)
+plot(x = Xubah, y = data$Y)
+plot(x = Xubah, y = Yubah)
+data.sqrt <- data.frame(Xubah, Yubah)
+```
+Karena hubungan X dan Y cenderung membentuk sebuah parabola dan nilai B1 < 0, maka data dapat ditransformasi dengan mengecilkan nilai X dan/atau Y dengan membentuknya menjadi pangkat setengah atau akar dari data asli. Terdapat perbedaan antara hasil plot hubunagn Xubah dengan Y, X dengan Yubah, dan Xubah dengan Yubah sehingga perlu ditelusuri lebih lanjut untuk memperoleh model terbaik melalui pemeriksaan asumsi pada data dengan sisaan paling bebas
+
+## Model dan Pemeriksaan Asumsi
+### Xubah dengan Y
+```{r}
+model1 = lm(formula = data$Y ~ Xubah)
+summary(model1)
+```
+Diperoleh model sebagai berikut  
+$$
+\hat Y = 63.2250 - 0.7.7481X + e
+$$
+
+```{r}
+dwtest(model1)
+```
+Karena p-value = 0.0.1422 < alpha = 0.05, maka tolak H0, sisaan tidak saling bebas, asumsi tidak terpenuhi pada taraf nyata 5%, bukan model terbaik
+
+### X dengan Yubah
+```{r}
+model2 = lm(formula = Yubah ~ data$X)
+summary(model2)
+```
+Diperoleh model sebagai berikut  
+$$
+\hat Y = 7.015455 - 0.081045X + e
+$$
+
+```{r}
+dwtest(model2)
+```
+Karena p-value = 0.02493 (pada DW test) < alpha = 0.05, maka tolak H0, sisaan tidak saling bebas, asumsi tidak terpenuhi pada taraf nyata 5%, bukan model terbaik
+
+### Xubah dengan Yubah
+```{r}
+model3 = lm(formula = Yubah ~ Xubah)
+summary(model3)
+```
+Diperoleh model sebagai berikut  
+$$
+\hat Y = 8.71245 - 0.81339X + e
+$$
+
+```{r}
+dwtest(model3)
+```
+Karena p-value = 0.8629 (pada DW test) > alpha = 0.05, maka tak tolak H0, sisaan saling bebas. Berdasarkan uji autokorelasi, memang hasil menunjukkan sisaan saling bebas, namun perlu diperiksa kembali dengan uji asumsi yang lain utnuk memastikan bahwa model terbaik. 
+
+```{r}
+plot(model3)
+```
+
+```{r}
+t.test(model3$residuals,mu = 0,conf.level = 0.95)
+```
+```{r}
+ncvTest(model3)
+```
+```{r}
+sisaan.model3 <- resid(model3)
+(norm.model3 <- lillie.test(sisaan.model3))
+```
+Karena nilai p-value dari semua uji asumsi lebih dari nilai alpha 0.05 sehingga asumsi terpenuhi.
+
+# Kesimpulan dan Transformasi Balik
+Hasil model terbaik dipenuhi ketika variabel X dan Y keduanya ditransformasi ke dalam bentuk akar atau pangkat 1/2 dan memenuhi semua asumsi dalam analisis regresi linier sederhana. Sehingga model untuk data ini adalah  
+$$
+\hat Y^{\frac{1}{2}} = 8.71245 - 0.81339X^{\frac{1}{2}} + e
+$$
+
+Jika ingin mengembalikan model untuk menjelaskan peubah respons sebelum ditransformasi, perlu dilakukan transformasi balik pada model yang dibentuk. Prosedur transformasi balik dilakukan dengan proses matematika biasa dengan mengutamakan pengubahan peubah respons terlebih dahulu.  
+$$
+\hat Y = (8.71245 - 0.81339X^{\frac{1}{2}} + e)^{2}
+$$
+
+Interpretasi terhadap model tersebut menunjukkan hubungan yang terbalik antara Y dengan $X^{\frac{1}{2}}$ sebagai hubungan kuadratik. Semakin besar nilai $X^{\frac{1}{2}}$ semakin kecil nilai dugaan rata-rata Y. Ketika $X^{\frac{1}{2}}$ sama dengan nol dan berada pada selang amatan, nilai dugaan rataan Y sebesar 8.71245 dan setiap kenaikan 1 satuannya akan menurunkan nilai Y dugaan rataan sebesar 0.81339.
